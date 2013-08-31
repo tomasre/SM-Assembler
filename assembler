@@ -1,0 +1,100 @@
+#!/bin/bash
+
+#maps the operation to the opcode and exits with a 1 if not found
+mapop () {
+	case "$1" in 
+		HALT) echo 0; return 0;;
+		LOAD) echo 1; return 0;;
+		STORE) echo 2; return 0;;
+		ADDC) echo 3; return 0;;
+		MVAC) echo 4; return 0;;
+		JEQ) echo 5; return 0;;
+		JLT) echo 6; return 0;;
+		JMP) echo 7; return 0;;
+		ADD) echo 8; return 0;;
+		SUB) echo 9; return 0;;
+		DEC) echo A; return 0;;
+		LA) echo B; return 0;;
+		LIA) echo C; return 0;;
+	esac
+	return 1
+}
+
+# vardecs variable MUST be set prior with a 'variablename=value linenumber' 
+# on each line
+# takes in 1 argument, the name of the variable, and outputs its line number
+# as a 3 bit hex value (not beginning with 0x)
+hexlinenum () {
+	# OUTPUTS IT IN 12 BITS (3 DIGITS)
+	#$1 === var name
+	echo hexlinenum called >&2
+	echo hexlinenum arg = $1 >&2
+	local varline=
+	while read varline;do
+		local varname=$(echo $varline | sed s/=.*//)
+		if [ "$1" = "$varname" ]; then
+			#local numdec=$(echo $varline | sed -e s/#.*// -e s/[^=]*=//)
+			local numdec=$(echo $varline | sed -e s/#.*// -e s/[^\ ]*\ //)
+			echo $numdec >&2
+			local numhex=$(printf '%x' $numdec)
+			echo $numhex >&2 
+			while [ ${#numhex} -lt 3 ]; do
+				numhex=0$numhex
+			done
+			echo $numhex
+			return 0
+		fi 
+	done <<< "$vardecs"
+	return 1
+}
+
+#todo
+# remove all lines without a variable declaration or a operation
+
+#echo $(mapop "$1")
+
+##!!!!!! must have eof at the end of file
+
+# set nl variable to help with new lines in variables
+nl=$'\n'
+
+# vardecs will have a 'variablename=value linenumber' on each line
+# for every variable declaration in the file
+vardecs=
+# to keep track of the line the variable is on
+linecount=1
+# populate the vardecs variable
+while read line; do 
+	#echo $line
+	opstring=$(echo "$line" | sed s/[[:space:]#].*// )
+	#echo $opstring
+	opcode=$(mapop "$opstring")
+	if [ "$?" -ne 0 ]; then
+		#not an operator, must be variable declaration (for now)
+		sanitizedline=$(echo $line | sed s~[#[:space:]].*~~)
+		vardecs="$vardecs$sanitizedline $linecount$nl"
+	fi
+	linecount=$((linecount + 1))
+done < $1
+echo -e "$vardecs"
+
+
+
+#go through and make substitutions
+outfile=${1}.ml
+while read line; do
+	opstring=$(echo "$line" | sed s/[[:space:]#].*// )
+	opcode=$(mapop "$opstring")
+	if [ "$?" -ne 0 ]; then
+		continue; #substitute vars
+	fi
+	#only opcode lines
+	nameofvar=$(echo $line | sed -e s/#.*// -e s/[^\ ]*[[:space:]]//)
+	hexrep=$(hexlinenum $nameofvar)
+	echo "0x$opcode$hexrep" >> $outfile
+done < $1
+
+#echo -e "$vardecs"
+#while read line; do
+#	echo "$line"
+#done <<< "$vardecs"
