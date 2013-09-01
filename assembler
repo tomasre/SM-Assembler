@@ -135,7 +135,7 @@ while read line || [ -n "$line" ] ; do
 		opstring=$(extractop "$line")
 		opcode=$(mapop "$opstring")
 		unaryop=false
-		for unaryops in 0 3 4 A ; do
+		for unaryops in 0 3 4 A C ; do
 			[ "$unaryops" = "$opcode" ] && unaryop=true && break
 		done
 		#echo unaryop:$unaryop
