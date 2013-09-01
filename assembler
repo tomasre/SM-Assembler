@@ -97,12 +97,23 @@ linecount=-1 # incremented before
 while read line || [ -n "$line" ] ; do 
 	linecount=$((linecount + 1))
 	if islabeldec "$line" ; then
+		#echo label dec --\> $line
 		varname=$(echo "$line" | sed s/:.*//)
 		vardecs="$vardecs$varname $linecount$nl"
+		continue
 	fi
+
 	isopdec "$line" && continue
-	isvardec "$line" || continue #must be a blank line or garbage
+	# if its not a variable declaration its garbage and don't count the line
+	if ! isvardec "$line" ; then
+		linecount=$((linecount - 1))
+		continue
+	fi
+	#isopdec "$line" && continue
+	#isvardec "$line" || continue #must be a blank line or garbage
 	
+	#must be a regular variable declaration
+	#echo variable dec --\> $line
 	sanitizedline=$(echo $line | sed s~[#[:space:]].*~~)
 	vardecs="$vardecs$sanitizedline $linecount$nl"
 done < $1
@@ -143,5 +154,8 @@ while read line || [ -n "$line" ] ; do
 		#varvalue=$(printf '%x' $varvalue) #don't want it in dec anymore
 		varvalue=$(padtonumbits $varvalue 4)
 		echo 0x$varvalue \# $line >> $outfile
+	else 
+		# output the comment
+		echo $line >> $outfile
 	fi
 done < $1
