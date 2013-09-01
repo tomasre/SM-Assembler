@@ -36,30 +36,35 @@ isopdec () {
 	echo "$1" | grep -E -q "^[A-Z]{2,4}"
 }
 
+islabeldec () {
+	echo "$1" | grep -q "^[[:alnum:]]*:"
+}
+
 # vardecs variable MUST be set prior with a 'variablename=value linenumber' 
-# on each line
+# or 'labelname linenumber' on each line
 # takes in 1 argument, the name of the variable, and outputs its line number
 # as a 3 bit hex value (not beginning with 0x)
 hexlinenum () {
 	# OUTPUTS IT IN 12 BITS (3 DIGITS)
 	#$1 === var name
-	#echo hexlinenum called >&2
-	#echo hexlinenum arg = $1 >&2
+	#echo matching variable:\'$1\' to hex ----- >&2
 	local varline=
 	while read varline; do
-		local varname=$(echo $varline | sed s/=.*//)
+		local varname=$(echo $varline | sed s/[=\ ].*//)
 		#echo finding variable line:\'$varname\' >&2
+		#echo checking \'$varname\' >&2
 		if [ "$1" = "$varname" ]; then
-			#local numdec=$(echo $varline | sed -e s/#.*// -e s/[^=]*=//)
-			local numdec=$(echo $varline | sed -e s/#.*// -e s/[^\ ]*\ //)
+			local numdec=$(echo $varline | sed -e s/[[:space:]]*#.*// -e s/[^\ ]*\ //) #need to trim space before #?
 			#echo $numdec >&2
 			local numhex=$(printf '%x' $numdec)
 			#echo $numhex >&2 
 			numhex=$(padtonumbits $numhex 3)
 			echo $numhex
+			#echo done matching variable name to hex ------ >&2
 			return 0
 		fi 
 	done <<< "$vardecs"
+	#echo done matching variable name to hex ------ >&2
 	return 1
 }
 
@@ -87,16 +92,23 @@ nl=$'\n'
 # for every variable declaration in the file
 vardecs=
 # to keep track of the line the variable is on
-linecount=0 # incremented before
+linecount=-1 # incremented before
 # populate the vardecs variable
 while read line || [ -n "$line" ] ; do 
 	linecount=$((linecount + 1))
+	if islabeldec "$line" ; then
+		varname=$(echo "$line" | sed s/:.*//)
+		vardecs="$vardecs$varname $linecount$nl"
+	fi
 	isopdec "$line" && continue
-	isvardec || continue #must be a blank line or garbage
+	isvardec "$line" || continue #must be a blank line or garbage
 	
 	sanitizedline=$(echo $line | sed s~[#[:space:]].*~~)
 	vardecs="$vardecs$sanitizedline $linecount$nl"
 done < $1
+#echo variable declaration dump -----
+#echo -e "$vardecs"
+#echo variable dump end -----
 
 outfile=out.ml
 #for nowww
@@ -104,20 +116,25 @@ rm $outfile
 
 #go through and make subsitutions
 while read line || [ -n "$line" ] ; do
-	if isopdec "$line" ; then
+	if isopdec "$line" || islabeldec "$line" ; then
 		# operation line --> two options: op var OR op
+		# if it contains a label dec, remove it and make subs as normal
+		origline="$line"
+		islabeldec "$line" && line=$(echo "$line" | sed s/^[^:]*:[[:space:]]*//)
 		opstring=$(extractop "$line")
 		opcode=$(mapop "$opstring")
 		unaryop=false
 		for unaryops in 0 3 4 A ; do
-			[ unaryops = "$opcode" ] && unaryop=true && break
+			[ "$unaryops" = "$opcode" ] && unaryop=true && break
 		done
-		if [ unaryop = 'false' ] ; then
+		#echo unaryop:$unaryop
+		if [ "$unaryop" = false ] ; then
 			nameofvar=$(echo $line | sed -e s/#.*// -e s/[^\ ]*[[:space:]]//)
+			#echo not unary operator, variable name:$nameofvar
 			hexrep=$(hexlinenum $nameofvar)
-			echo "0x$opcode$hexrep # $line" >> $outfile
+			echo "0x$opcode$hexrep # $origline" >> $outfile
 		else
-			echo "0x${opcode}000 # $line" >> $outfile
+			echo "0x${opcode}000 # $origline" >> $outfile
 		fi
 		
 	elif isvardec "$line" ;then
