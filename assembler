@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# assembler takes in a file which has the assembly language instructions
+# for the simple machine, and converts them into the hex commands
+# by subsituting the command into the correct opcode and the variable
+# name into its line number where the variable is declared
+# variable declarations are subsituted for their value in hex
+
+# variables are declared with their value in decimal
+
 #maps the operation to the opcode and exits with a 1 if not found
 mapop () {
 	case "$1" in 
@@ -27,20 +35,19 @@ mapop () {
 hexlinenum () {
 	# OUTPUTS IT IN 12 BITS (3 DIGITS)
 	#$1 === var name
-	echo hexlinenum called >&2
-	echo hexlinenum arg = $1 >&2
+	#echo hexlinenum called >&2
+	#echo hexlinenum arg = $1 >&2
 	local varline=
-	while read varline;do
+	while read varline; do
 		local varname=$(echo $varline | sed s/=.*//)
+		echo finding variable line:\'$varname\' >&2
 		if [ "$1" = "$varname" ]; then
 			#local numdec=$(echo $varline | sed -e s/#.*// -e s/[^=]*=//)
 			local numdec=$(echo $varline | sed -e s/#.*// -e s/[^\ ]*\ //)
-			echo $numdec >&2
+			#echo $numdec >&2
 			local numhex=$(printf '%x' $numdec)
-			echo $numhex >&2 
-			while [ ${#numhex} -lt 3 ]; do
-				numhex=0$numhex
-			done
+			#echo $numhex >&2 
+			numhex=$(padtonumbits $numhex 3)
 			echo $numhex
 			return 0
 		fi 
@@ -48,25 +55,35 @@ hexlinenum () {
 	return 1
 }
 
+# takes in the number and the number of bits you want the number to fill
+# example: padtonumbits 5A 4 --> outputs 005A
+padtonumbits () {
+	local val=$1
+	while [ ${#val} -lt "$2" ]; do 
+		val=0$val
+	done
+	echo $val
+}
+
+# extraction functions
+extractop () {
+	echo "$1" | sed s/[[:space:]#].*//
+}
+
 #todo
 # remove all lines without a variable declaration or a operation
 
-#echo $(mapop "$1")
-
-##!!!!!! must have eof at the end of file
-
 # set nl variable to help with new lines in variables
 nl=$'\n'
-
 # vardecs will have a 'variablename=value linenumber' on each line
 # for every variable declaration in the file
 vardecs=
 # to keep track of the line the variable is on
 linecount=1
 # populate the vardecs variable
-while read line; do 
+while read line || [ -n "$line" ] ; do 
 	#echo $line
-	opstring=$(echo "$line" | sed s/[[:space:]#].*// )
+	opstring=$(extractop "$line")
 	#echo $opstring
 	opcode=$(mapop "$opstring")
 	if [ "$?" -ne 0 ]; then
@@ -78,23 +95,24 @@ while read line; do
 done < $1
 echo -e "$vardecs"
 
+outfile=out.ml
+#for nowww
+rm $outfile
 
-
-#go through and make substitutions
-outfile=${1}.ml
-while read line; do
+#go through and make subsitutions
+while read line || [ -n "$line" ] ; do
 	opstring=$(echo "$line" | sed s/[[:space:]#].*// )
 	opcode=$(mapop "$opstring")
 	if [ "$?" -ne 0 ]; then
-		continue; #substitute vars
+		# variable declaration line
+		varvalue=$(echo $line | sed -e s/[^=]*=// -e s/[[:space:]#].*//)
+		varvalue=$(printf '%x' $varvalue)
+		varvalue=$(padtonumbits $varvalue 4)
+		echo 0x$varvalue >> $outfile
+	else
+		# operation line --> two options: op var OR op
+		nameofvar=$(echo $line | sed -e s/#.*// -e s/[^\ ]*[[:space:]]//)
+		hexrep=$(hexlinenum $nameofvar)
+		echo "0x$opcode$hexrep" >> $outfile
 	fi
-	#only opcode lines
-	nameofvar=$(echo $line | sed -e s/#.*// -e s/[^\ ]*[[:space:]]//)
-	hexrep=$(hexlinenum $nameofvar)
-	echo "0x$opcode$hexrep" >> $outfile
 done < $1
-
-#echo -e "$vardecs"
-#while read line; do
-#	echo "$line"
-#done <<< "$vardecs"
