@@ -40,7 +40,7 @@ hexlinenum () {
 	local varline=
 	while read varline; do
 		local varname=$(echo $varline | sed s/=.*//)
-		echo finding variable line:\'$varname\' >&2
+		#echo finding variable line:\'$varname\' >&2
 		if [ "$1" = "$varname" ]; then
 			#local numdec=$(echo $varline | sed -e s/#.*// -e s/[^=]*=//)
 			local numdec=$(echo $varline | sed -e s/#.*// -e s/[^\ ]*\ //)
@@ -93,7 +93,7 @@ while read line || [ -n "$line" ] ; do
 	fi
 	linecount=$((linecount + 1))
 done < $1
-echo -e "$vardecs"
+#echo -e "$vardecs"
 
 outfile=out.ml
 #for nowww
@@ -101,18 +101,18 @@ rm $outfile
 
 #go through and make subsitutions
 while read line || [ -n "$line" ] ; do
-	opstring=$(echo "$line" | sed s/[[:space:]#].*// )
+	opstring=$(extractop "$line")
 	opcode=$(mapop "$opstring")
 	if [ "$?" -ne 0 ]; then
 		# variable declaration line
 		varvalue=$(echo $line | sed -e s/[^=]*=// -e s/[[:space:]#].*//)
 		varvalue=$(printf '%x' $varvalue)
 		varvalue=$(padtonumbits $varvalue 4)
-		echo 0x$varvalue >> $outfile
+		echo 0x$varvalue \# $line >> $outfile
 	else
 		# operation line --> two options: op var OR op
 		nameofvar=$(echo $line | sed -e s/#.*// -e s/[^\ ]*[[:space:]]//)
 		hexrep=$(hexlinenum $nameofvar)
-		echo "0x$opcode$hexrep" >> $outfile
+		echo "0x$opcode$hexrep # $line" >> $outfile
 	fi
 done < $1
