@@ -28,6 +28,14 @@ mapop () {
 	return 1
 }
 
+isvardec () {
+	echo "$1" | grep -E -q "^[[:alnum:]]+=[0-9]+"
+}
+
+isopdec () {
+	echo "$1" | grep -E -q "^[A-Z]{2,4}"
+}
+
 # vardecs variable MUST be set prior with a 'variablename=value linenumber' 
 # on each line
 # takes in 1 argument, the name of the variable, and outputs its line number
@@ -79,21 +87,16 @@ nl=$'\n'
 # for every variable declaration in the file
 vardecs=
 # to keep track of the line the variable is on
-linecount=1
+linecount=0 # incremented before
 # populate the vardecs variable
 while read line || [ -n "$line" ] ; do 
-	#echo $line
-	opstring=$(extractop "$line")
-	#echo $opstring
-	opcode=$(mapop "$opstring")
-	if [ "$?" -ne 0 ]; then
-		#not an operator, must be variable declaration (for now)
-		sanitizedline=$(echo $line | sed s~[#[:space:]].*~~)
-		vardecs="$vardecs$sanitizedline $linecount$nl"
-	fi
 	linecount=$((linecount + 1))
+	isopdec "$line" && continue
+	isvardec || continue #must be a blank line or garbage
+	
+	sanitizedline=$(echo $line | sed s~[#[:space:]].*~~)
+	vardecs="$vardecs$sanitizedline $linecount$nl"
 done < $1
-#echo -e "$vardecs"
 
 outfile=out.ml
 #for nowww
@@ -101,18 +104,27 @@ rm $outfile
 
 #go through and make subsitutions
 while read line || [ -n "$line" ] ; do
-	opstring=$(extractop "$line")
-	opcode=$(mapop "$opstring")
-	if [ "$?" -ne 0 ]; then
+	if isopdec "$line" ; then
+		# operation line --> two options: op var OR op
+		opstring=$(extractop "$line")
+		opcode=$(mapop "$opstring")
+		unaryop=false
+		for unaryops in 0 3 4 A ; do
+			[ unaryops = "$opcode" ] && unaryop=true && break
+		done
+		if [ unaryop = 'false' ] ; then
+			nameofvar=$(echo $line | sed -e s/#.*// -e s/[^\ ]*[[:space:]]//)
+			hexrep=$(hexlinenum $nameofvar)
+			echo "0x$opcode$hexrep # $line" >> $outfile
+		else
+			echo "0x${opcode}000 # $line" >> $outfile
+		fi
+		
+	elif isvardec "$line" ;then
 		# variable declaration line
 		varvalue=$(echo $line | sed -e s/[^=]*=// -e s/[[:space:]#].*//)
 		varvalue=$(printf '%x' $varvalue)
 		varvalue=$(padtonumbits $varvalue 4)
 		echo 0x$varvalue \# $line >> $outfile
-	else
-		# operation line --> two options: op var OR op
-		nameofvar=$(echo $line | sed -e s/#.*// -e s/[^\ ]*[[:space:]]//)
-		hexrep=$(hexlinenum $nameofvar)
-		echo "0x$opcode$hexrep # $line" >> $outfile
 	fi
 done < $1
