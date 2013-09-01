@@ -6,7 +6,7 @@
 # name into its line number where the variable is declared
 # variable declarations are subsituted for their value in hex
 
-# variables are declared with their value in decimal
+# variables are declared in hex NOT beginning with 0x....
 
 #maps the operation to the opcode and exits with a 1 if not found
 mapop () {
@@ -140,7 +140,7 @@ while read line || [ -n "$line" ] ; do
 	elif isvardec "$line" ;then
 		# variable declaration line
 		varvalue=$(echo $line | sed -e s/[^=]*=// -e s/[[:space:]#].*//)
-		varvalue=$(printf '%x' $varvalue)
+		#varvalue=$(printf '%x' $varvalue) #don't want it in dec anymore
 		varvalue=$(padtonumbits $varvalue 4)
 		echo 0x$varvalue \# $line >> $outfile
 	fi
