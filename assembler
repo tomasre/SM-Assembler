@@ -24,6 +24,8 @@ mapop () {
 		DEC) echo A; return 0;;
 		LA) echo B; return 0;;
 		LIA) echo C; return 0;;
+		SIA) echo D; return 0;;
+		MVAA) echo E; return 0;;
 	esac
 	return 1
 }
@@ -135,7 +137,7 @@ while read line || [ -n "$line" ] ; do
 		opstring=$(extractop "$line")
 		opcode=$(mapop "$opstring")
 		unaryop=false
-		for unaryops in 0 3 4 A C ; do
+		for unaryops in 0 3 4 A C D E ; do
 			[ "$unaryops" = "$opcode" ] && unaryop=true && break
 		done
 		#echo unaryop:$unaryop
