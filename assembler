@@ -31,7 +31,7 @@ mapop () {
 }
 
 isvardec () {
-	echo "$1" | grep -E -q "^[[:alnum:]]+=[0-9]+"
+	echo "$1" | grep -E -q "^[[:alnum:]]+=[[:alnum:]]+"
 }
 
 isopdec () {
