@@ -2,13 +2,28 @@
 
 # assembler takes in a file which has the assembly language instructions
 # for the simple machine, and converts them into the hex commands
-# by subsituting the command into the correct opcode and the variable
-# name into its line number where the variable is declared
 # variable declarations are subsituted for their value in hex
-
 # variables are declared in hex NOT beginning with 0x....
 
-#maps the operation to the opcode and exits with a 1 if not found
+# usage: assembler file [-s] [path to simulator]
+
+# outputs the assembled code to stdout with the assembly language code
+# commented out to the right of the machine language 
+#
+# if the -s and simulator path are given it outputs the simulator output
+# of the assembled machine language with the machine and assembly language
+# commented out to the right of the memory locations
+#
+# example assembly:
+# LOAD var1 # loads value 1
+# labelvar: ADD var2 # label declaration for this line to be used with JMP 
+# JMP labelvar # jumps to the line with the labelvar label ( ADD var2 )
+# HALT
+# var1=97C # regular variable declaration
+# var2=43F 
+
+
+# maps the operation to the opcode and exits with a 1 if not found
 mapop () {
 	case "$1" in 
 		HALT) echo 0; return 0;;
@@ -30,14 +45,17 @@ mapop () {
 	return 1
 }
 
+# checks if given line is a variable declaration
 isvardec () {
 	echo "$1" | grep -E -q "^[[:alnum:]]+=[[:alnum:]]+"
 }
 
+# checks if given line is a operator declaration
 isopdec () {
 	echo "$1" | grep -E -q "^[A-Z]{2,4}"
 }
 
+#checks if given line is a label declaration
 islabeldec () {
 	echo "$1" | grep -q "^[[:alnum:]]*:"
 }
@@ -45,10 +63,9 @@ islabeldec () {
 # vardecs variable MUST be set prior with a 'variablename=value linenumber' 
 # or 'labelname linenumber' on each line
 # takes in 1 argument, the name of the variable, and outputs its line number
-# as a 3 bit hex value (not beginning with 0x)
+# as a 3 digit hex value (not beginning with 0x)
 hexlinenum () {
-	# OUTPUTS IT IN 12 BITS (3 DIGITS)
-	#$1 === var name
+	# $1 === var name
 	#echo matching variable:\'$1\' to hex ----- >&2
 	local varline=
 	while read varline; do
@@ -80,21 +97,46 @@ padtonumbits () {
 	echo $val
 }
 
-# extraction functions
+# extracts the operator from a given line
 extractop () {
 	echo "$1" | sed s/[[:space:]#].*//
 }
 
-#todo
-# remove all lines without a variable declaration or a operation
+# check inputs
+if [ "$#" -ne 1 ] && [ "$#" -ne 3 ] ; then
+	echo "$0": invalid number of arguments >&2
+	exit 1
+fi
+if ! [ -r "$1" ] ; then
+	echo "$0": input file must have readable permissions >&2
+	exit 1
+fi
+
+if [ "$2" = '-s' ] ; then
+	runningsim=true
+	if ! [ -x "$3" ] ; then
+		echo "$0": simulator must have execute permissions >&2
+		exit 1
+	fi
+	# check if sim program is valid todo
+	simpath="$3"
+fi
+
+# where only the commands are stored
+realoutputcache=$(mktemp /tmp/assembler.XXXXXX)
+# where the comment lines are also stored
+alloutputcache=$(mktemp /tmp/assembler.XXXXXX)
+
 
 # set nl variable to help with new lines in variables
 nl=$'\n'
-# vardecs will have a 'variablename=value linenumber' on each line
-# for every variable declaration in the file
+# vardecs will have a 'variablename=value linenumber'
+# or 'labelname linenumber' on each line
+# for every variable or label declaration in the file 
 vardecs=
 # to keep track of the line the variable is on
 linecount=-1 # incremented before
+
 # populate the vardecs variable
 while read line || [ -n "$line" ] ; do 
 	linecount=$((linecount + 1))
@@ -123,10 +165,6 @@ done < $1
 #echo -e "$vardecs"
 #echo variable dump end -----
 
-outfile=out.ml
-#for nowww
-rm $outfile
-
 #go through and make subsitutions
 while read line || [ -n "$line" ] ; do
 	if isopdec "$line" || islabeldec "$line" ; then
@@ -145,9 +183,10 @@ while read line || [ -n "$line" ] ; do
 			nameofvar=$(echo $line | sed -e s/#.*// -e s/[^\ ]*[[:space:]]//)
 			#echo not unary operator, variable name:$nameofvar
 			hexrep=$(hexlinenum $nameofvar)
-			echo "0x$opcode$hexrep # $origline" >> $outfile
+			# output line to the outfile and to the temporary file used by simulator
+			echo "0x$opcode$hexrep # $origline" | tee -a "$alloutputcache" | cat >> "$realoutputcache"
 		else
-			echo "0x${opcode}000 # $origline" >> $outfile
+			echo "0x${opcode}000 # $origline" | tee -a "$alloutputcache" | cat >> "$realoutputcache"
 		fi
 		
 	elif isvardec "$line" ;then
@@ -155,9 +194,37 @@ while read line || [ -n "$line" ] ; do
 		varvalue=$(echo $line | sed -e s/[^=]*=// -e s/[[:space:]#].*//)
 		#varvalue=$(printf '%x' $varvalue) #don't want it in dec anymore
 		varvalue=$(padtonumbits $varvalue 4)
-		echo 0x$varvalue \# $line >> $outfile
+		echo 0x$varvalue \# $line | tee -a "$alloutputcache" | cat >> "$realoutputcache"
 	else 
 		# output the comment
-		echo $line >> $outfile
+		echo $line >> "$alloutputcache"
 	fi
 done < $1
+
+if [ "$runningsim" = 'true' ] ; then
+	# want to display only commands next to simulator output
+	simoutput=$(mktemp /tmp/assembler.XXXXXX)
+	"$simpath" "$realoutputcache" > "$simoutput"
+
+	counter=1
+	numlines=$(cat "$realoutputcache" | wc -l)
+	while read simline ; do
+		if ! echo "$simline" | grep -q "^[[:space:]]*__mem" ; then
+			echo "$simline"
+			continue
+		fi
+		echo "$simline" '#--#' $(cat "$realoutputcache" | sed -n "${counter}p")
+		counter=$(( counter + 1))
+		[ "$counter" -gt "$numlines" ] && counter=1
+	done < "$simoutput"
+	
+	rm "$simoutput"
+else 
+	# want to display everything to stdout
+	while read line; do
+		echo "$line"
+	done < "$alloutputcache"
+fi
+
+rm "$realoutputcache"
+rm "$alloutputcache"
